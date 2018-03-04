@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+
+  <remote name="bootleg"
+          fetch="https://github.com/BootleggersROM/"
+          revision="tirimbino" />
+
+  <default remote="bootleg"
+           sync-c="true"
+           sync-j="4" />
+
+  <project path="frameworks/base" name="frameworks_base" groups="pdk-cw-fs,pdk-fs" remote="bootleg" />
+  <project path="packages/apps/BootlegDumpster" name="packages_apps_BootlegDumpster" groups="pdk-cw-fs,pdk-fs" remote="bootleg" />
+  <project path="packages/apps/Launcher3" name="packages_apps_Launcher3" groups="pdk-fs" remote="bootleg" />
+  <project path="packages/apps/Settings" name="packages_apps_Settings" groups="pdk-fs" remote="bootleg" />
+  <!--
+  <project path="packages/apps/ShishuOTA" name="packages_apps_ShishuOTA" groups="pdk-cw-fs,pdk-fs" remote="bootleg" />  -->
+
+</manifest>

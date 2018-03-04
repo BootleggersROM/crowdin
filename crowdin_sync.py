@@ -3,7 +3,7 @@
 # crowdin_sync.py
 #
 # Updates Crowdin source translations and pushes translations
-# directly to Gerrit.
+# directly to Bootleggers' repos.
 #
 # Copyright (C) 2014-2016 The CyanogenMod Project
 # Copyright (C) 2017-2020 The LineageOS Project
@@ -57,7 +57,6 @@ def run_subprocess(cmd, silent=False):
               "stderr: %s" % (cmd, exit_code, comm[0], comm[1]),
               file=sys.stderr)
     return comm, exit_code
-
 
 def add_target_paths(config_files, repo, base_path, project_path):
     # Add or remove the files given in the config files to the commit
@@ -250,7 +249,7 @@ def reset_file(filepath, repo):
     repo.git.checkout(filepath)
 
 
-def push_as_commit(config_files, base_path, path, name, branch, username):
+def push_as_commit(config_files, base_path, path, name, branch):
     global _COMMITS_CREATED
     print(f'\nCommitting {name} on branch {branch}: ', end='')
 
@@ -279,66 +278,14 @@ def push_as_commit(config_files, base_path, path, name, branch, username):
 
     # Push commit
     try:
-        repo.git.push(f'ssh://{username}@gerrit.pixelexperience.org:29418/{name}',
-                      f'HEAD:refs/for/{branch}%topic=translation')
+        repo.git.push(f'https://github.com/BootleggersROM/{name}',
+                      f'HEAD:{branch}')
         print('Success')
     except Exception as e:
         print(e, '\nFailed to push!', file=sys.stderr)
         return
 
     _COMMITS_CREATED = True
-
-
-def submit_gerrit(branch, username, owner):
-    # If an owner is specified, modify the query so we only get the ones wanted
-    ownerArg = ''
-    if owner is not None:
-        ownerArg = f'owner:{owner}'
-
-    # Find all open translation changes
-    cmd = ['ssh', '-p', '29418',
-        f'{username}@gerrit.pixelexperience.org',
-        'gerrit', 'query',
-        'status:open',
-        f'branch:{branch}',
-        ownerArg,
-        'message:"Automatic translation import"',
-        'topic:translation',
-        '--current-patch-set',
-        '--format=JSON']
-    commits = 0
-    msg, code = run_subprocess(cmd)
-    if code != 0:
-        print(f'Failed: {msg[1]}')
-        return
-
-    # Each line is one valid JSON object, except the last one, which is empty
-    for line in msg[0].strip('\n').split('\n'):
-        js = json.loads(line)
-        # We get valid JSON, but not every result line is one we want
-        if not 'currentPatchSet' in js or not 'revision' in js['currentPatchSet']:
-            continue
-        # Add Code-Review +2 and Verified+1 labels and submit
-        cmd = ['ssh', '-p', '29418',
-        f'{username}@gerrit.pixelexperience.org',
-        'gerrit', 'review',
-        '--verified +1',
-        '--code-review +2',
-        '--submit', js['currentPatchSet']['revision']]
-        msg, code = run_subprocess(cmd, True)
-        print('Submitting commit %s: ' % js['url'], end='')
-        if code != 0:
-            errorText = msg[1].replace('\n\n', '; ').replace('\n', '')
-            print(f'Failed: {errorText}')
-        else:
-            print('Success')
-
-        commits += 1
-
-    if commits == 0:
-        print("Nothing to submit!")
-        return
-
 
 def check_run(cmd):
     p = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
@@ -361,7 +308,6 @@ def find_xml(base_path):
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Synchronising translations with Crowdin")
-    parser.add_argument('-u', '--username', help='Gerrit username')
     parser.add_argument('-b', '--branch', help='Branch',
                         required=True)
     parser.add_argument('-c', '--config', help='Custom yaml config')
@@ -371,8 +317,6 @@ def parse_args():
                         help='Upload translations to Crowdin')
     parser.add_argument('--download', action='store_true',
                         help='Download translations from Crowdin')
-    parser.add_argument('-s', '--submit', action='store_true',
-                        help='Merge open translation commits')
     parser.add_argument('-o', '--owner',
                         help='Specify the owner of the commits to submit')
     parser.add_argument('-p', '--path-to-crowdin',
@@ -442,7 +386,7 @@ def upload_translations_crowdin(branch, config, crowdin_path):
                    f'--config={_DIR}/config/{branch}.yaml'])
 
 
-def download_crowdin(base_path, branch, xml, username, config, crowdin_path):
+def download_crowdin(base_path, branch, xml, config, crowdin_path):
     if config:
         print('\nDownloading translations from Crowdin (custom config)')
         check_run([crowdin_path,
@@ -470,8 +414,9 @@ def download_crowdin(base_path, branch, xml, username, config, crowdin_path):
         for p in str(comm[0]).split("\n"):
             paths.append(p.replace(f'{branch}/', ''))
 
-    print('\nUploading translations to Gerrit')
-    items = [x for x in xml.findall("//project")]
+    print('\nUploading translations to GitHub')
+    xml_android = load_xml(x='%s/config/%s.xml' % (_DIR, branch))
+    items = xml_android.getElementsByTagName('project')
     all_projects = []
 
     for path in paths:
@@ -535,7 +480,7 @@ def download_crowdin(base_path, branch, xml, username, config, crowdin_path):
         br = resultProject.get('revision') or branch
 
         push_as_commit(files, base_path, result,
-                       resultProject.get('name'), br, username)
+                       resultProject.get('name'), br)
 
 
 def sig_handler(signal_received, frame):
@@ -549,13 +494,6 @@ def main():
     signal(SIGINT, sig_handler)
     args = parse_args()
     default_branch = args.branch
-
-    if args.submit:
-        if args.username is None:
-            print('Argument -u/--username is required for submitting!')
-            sys.exit(1)
-        submit_gerrit(default_branch, args.username, args.owner)
-        sys.exit(0)
 
     if args.path_to_crowdin == 'crowdin' and not check_dependencies():
         sys.exit(1)
@@ -581,17 +519,13 @@ def main():
     if not check_files(files):
         sys.exit(1)
 
-    if args.download and args.username is None:
-        print('Argument -u/--username is required for translations download')
-        sys.exit(1)
-
     if args.upload_sources:
         upload_sources_crowdin(default_branch, args.config, args.path_to_crowdin)
     if args.upload_translations:
         upload_translations_crowdin(default_branch, args.config, args.path_to_crowdin)
     if args.download:
         download_crowdin(base_path, default_branch, xml_main,
-                         args.username, args.config, args.path_to_crowdin)
+                         args.config, args.path_to_crowdin)
 
     if _COMMITS_CREATED:
         print('\nDone!')

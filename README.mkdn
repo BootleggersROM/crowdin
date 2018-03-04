@@ -23,7 +23,7 @@ Export the following environment variables to set the API keys and the base path
 
 Execute:
 
-    ./crowdin_sync.py --username your_gerrit_username --branch version [--upload-sources] [--upload-translations] [--download] [--submit]
+    ./crowdin_sync.py --branch version [--upload-sources] [--upload-translations] [--download]
 
 Bugs
 ----
